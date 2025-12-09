@@ -1,6 +1,8 @@
 services:
   mysql:
-    image: mysql:8.0
+    build:
+      context: ./db
+      dockerfile: Dockerfile
     container_name: solar_mysql
     restart: always
     environment:
@@ -13,9 +15,12 @@ services:
     networks:
       - solar_network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 20s
-      retries: 10
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pyour_root_password"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    command: --default-authentication-plugin=mysql_native_password
 
   backend:
     build:
@@ -27,33 +32,24 @@ services:
       - "5001:5000"
     environment:
       NODE_ENV: production
-      DB_HOST: mysql
-      DB_USER: root
+      HOST: mysql
+      USER: root
       DB_PASSWORD: your_root_password
-      DB_NAME: iot_solar
-      DB_DIALECT: mysql
+      DB: iot_solar
+      DIALECT: mysql
       PORT: 5000
       ROOT_ROUTES: /api
       SALT_ROUND: 15
+      JWT_SECRET: SECRETKEYADMINAUTHTOKENNADMINPASSWORDCREATEDBYIOTTECHSOFTWARE
+      JWT_EXPIRES_IN: 24h
+      MQTT_HOST: mqtt://everonsolar.com:1883
+      MQTT_USERNAME: your_mqtt_username
+      MQTT_PASSWORD: your_mqtt_password
+      MQTT_TOPIC: mppt_demo
+      SECRET_KEY_ADMIN_PASSWORD: SECRETKEYBFOOTLOGINADMINPASSWORDCREATEDBYIOTTECHSOFTWARE
     depends_on:
       mysql:
         condition: service_healthy
-    networks:
-      - solar_network
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      args:
-        REACT_APP_BASE_URL: http://localhost:5001/api/
-        REACT_APP_IMAGE_URL: http://localhost:5001/api/images/
-    container_name: solar_frontend
-    restart: always
-    ports:
-      - "3000:80"
-    depends_on:
-      - backend
     networks:
       - solar_network
 

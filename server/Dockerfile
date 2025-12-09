@@ -1,20 +1,18 @@
-# Backend Dockerfile
 FROM node:18-alpine
 
-# Set working directory
+# Install both for flexibility (netcat is very small)
+RUN apk update && apk add --no-cache netcat-openbsd mysql-client
+
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy application code
 COPY . .
 
-# Expose the port
+# Make entrypoint executable
+RUN chmod +x entrypoint.sh
+
 EXPOSE 5000
 
-# Start the application
-CMD ["node", "index.js"]
+ENTRYPOINT ["./entrypoint.sh"]
