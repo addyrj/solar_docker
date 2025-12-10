@@ -1,3 +1,5 @@
+version: "3.9"
+
 services:
   mysql:
     build:
@@ -6,8 +8,8 @@ services:
     container_name: solar_mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: your_root_password
-      MYSQL_DATABASE: iot_solar
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
     ports:
       - "3307:3306"
     volumes:
@@ -15,7 +17,7 @@ services:
     networks:
       - solar_network
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-pyour_root_password"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -32,24 +34,41 @@ services:
       - "5001:5000"
     environment:
       NODE_ENV: production
-      HOST: mysql
-      USER: root
-      DB_PASSWORD: your_root_password
-      DB: iot_solar
-      DIALECT: mysql
-      PORT: 5000
-      ROOT_ROUTES: /api
-      SALT_ROUND: 15
-      JWT_SECRET: SECRETKEYADMINAUTHTOKENNADMINPASSWORDCREATEDBYIOTTECHSOFTWARE
-      JWT_EXPIRES_IN: 24h
-      MQTT_HOST: mqtt://everonsolar.com:1883
-      MQTT_USERNAME: your_mqtt_username
-      MQTT_PASSWORD: your_mqtt_password
-      MQTT_TOPIC: mppt_demo
-      SECRET_KEY_ADMIN_PASSWORD: SECRETKEYBFOOTLOGINADMINPASSWORDCREATEDBYIOTTECHSOFTWARE
+      HOST: ${DB_HOST}
+      USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB: ${DB_NAME}
+      DIALECT: ${DB_DIALECT}
+      PORT: ${BACKEND_PORT}
+      ROOT_ROUTES: ${ROOT_ROUTES}
+      SALT_ROUND: ${SALT_ROUND}
+      SECRET_KEY_ADMIN_AUTH_TOKEN: ${SECRET_KEY_ADMIN_AUTH_TOKEN}
+      SECRET_KEY_ADMIN_PASSWORD: ${SECRET_KEY_ADMIN_PASSWORD}
+      MQTT_HOST: ${MQTT_HOST}
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MQTT_TOPIC: ${MQTT_TOPIC}
+      CORS_ORIGIN: ${CORS_ORIGIN}
     depends_on:
       mysql:
         condition: service_healthy
+    networks:
+      - solar_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_BASE_URL: ${REACT_APP_BASE_URL}
+        REACT_APP_IMAGE_URL: ${REACT_APP_IMAGE_URL}
+
+    container_name: solar_frontend
+    restart: always
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
     networks:
       - solar_network
 

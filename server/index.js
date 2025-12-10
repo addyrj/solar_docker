@@ -14,8 +14,9 @@ app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
 // CORS - must be before routes
+// In your backend index.js
 app.use(cors({
-    origin: '*', // Or specify your frontend URL
+    origin: ['http://localhost:3000', 'http://frontend:80'], // Both dev and prod
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
@@ -37,6 +38,8 @@ app.use((req, res, next) => {
 
 // Port configuration
 const port = process.env.PORT || 5000;
+console.log('=== ENVIRONMENT VARIABLES ===');
+console.log('SECRET_KEY_ADMIN_AUTH_TOKEN:', process.env.SECRET_KEY_ADMIN_AUTH_TOKEN ? 'SET' : 'NOT SET');
 
 // Database connection (your existing code)
 const Sequelize = require('sequelize');

@@ -1,0 +1,33 @@
+Here is your **ALL-IN-ONE PAGE DOCKER COMMANDS (PLAIN TEXT)** — no headings, no sections, just a clean single text file you can paste anywhere.
+
+---
+
+**ALL DOCKER COMMANDS (ONE PAGE TEXT)**
+
+docker-compose up --build
+docker-compose up -d
+docker-compose logs -f
+docker-compose logs -f backend
+docker-compose logs -f mysql
+docker-compose down -v --rmi all --remove-orphans
+docker system prune -af
+docker exec -it solar_mysql mysql -u root -pyour_root_password
+docker exec -it solar_mysql mysql -u root -pyour_root_password -e "USE iot_solar; SHOW TABLES;"
+docker volume rm solar_client_mysql_data
+
+# Recommended full reset:
+
+docker-compose down -v --remove-orphans
+docker volume rm solar_client_mysql_data
+docker system prune -af
+docker-compose up --build
+docker-compose logs -f
+
+# Quick notes:
+
+DB_HOST=solar_mysql
+Always run fresh build if database changes.
+
+---
+
+If you want, I can also convert this into a **README.md**, **PDF**, or a **notepad (.txt) file**.
