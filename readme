@@ -18,7 +18,6 @@ docker volume rm solar_client_mysql_data
 # Recommended full reset:
 
 docker-compose down -v --remove-orphans
-docker volume rm solar_client_mysql_data
 docker system prune -af
 docker-compose up --build
 docker-compose logs -f
