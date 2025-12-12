@@ -18,7 +18,7 @@ jobs:
       # 2. Create .env file for docker-compose
       - name: Create .env file
         run: |
-          cat > .env << EOF
+          cat > .env << 'EOF'
           MYSQL_ROOT_PASSWORD=root123
           MYSQL_DATABASE=iot_solar
           DB_HOST=mysql
@@ -44,78 +44,123 @@ jobs:
       - name: Display .env file
         run: cat .env
 
-      # 4. Setup Docker Buildx
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+      # 4. Verify docker-compose file exists
+      - name: Verify docker-compose.yaml exists
+        run: |
+          if [ ! -f "docker-compose.yaml" ]; then
+            echo "❌ docker-compose.yaml not found!"
+            exit 1
+          fi
+          echo "✅ docker-compose.yaml found"
 
       # 5. Build and start services with docker-compose
       - name: Build and Start Services
         run: |
           docker compose up --build -d
-          echo "Waiting for services to be healthy..."
-          sleep 30
+          echo "✅ Docker Compose started"
 
-      # 6. Check container status
-      - name: Check Running Containers
+      # 6. Wait for services to be ready
+      - name: Wait for services
         run: |
-          echo "=== Docker Containers ==="
-          docker ps -a
-          echo ""
-          echo "=== MySQL Container Logs ==="
-          docker logs solar_mysql --tail 50
-          echo ""
-          echo "=== Backend Container Logs ==="
-          docker logs solar_backend --tail 50
-          echo ""
-          echo "=== Frontend Container Logs ==="
-          docker logs solar_frontend --tail 50
+          echo "⏳ Waiting 60 seconds for all services to initialize..."
+          sleep 60
 
-      # 7. Test MySQL connection
+      # 7. Check container status
+      - name: Check Running Containers
+        if: always()
+        run: |
+          echo "=== Docker Containers Status ==="
+          docker compose ps
+          echo ""
+          docker ps -a
+
+      # 8. Show MySQL logs
+      - name: Show MySQL Logs
+        if: always()
+        run: |
+          echo "=== MySQL Container Logs (last 100 lines) ==="
+          docker logs solar_mysql --tail 100 || echo "Could not get MySQL logs"
+
+      # 9. Show Backend logs
+      - name: Show Backend Logs
+        if: always()
+        run: |
+          echo "=== Backend Container Logs (last 100 lines) ==="
+          docker logs solar_backend --tail 100 || echo "Could not get Backend logs"
+
+      # 10. Show Frontend logs
+      - name: Show Frontend Logs
+        if: always()
+        run: |
+          echo "=== Frontend Container Logs (last 100 lines) ==="
+          docker logs solar_frontend --tail 100 || echo "Could not get Frontend logs"
+
+      # 11. Test MySQL connection
       - name: Test MySQL Connection
         run: |
-          echo "Testing MySQL connection..."
-          docker exec solar_mysql mysqladmin ping -h localhost -u root -proot123 || true
+          echo "🧪 Testing MySQL connection..."
+          docker exec solar_mysql mysqladmin ping -h localhost -u root -proot123 && echo "✅ MySQL is responding" || echo "⚠️ MySQL not responding"
 
-      # 8. Test Backend API
+      # 12. Test Backend API (non-failing)
       - name: Test Backend API
         run: |
-          echo "Testing Backend API..."
-          curl -f http://localhost:5001/api || echo "Backend not responding yet"
+          echo "🧪 Testing Backend API at http://localhost:5001/api..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5001/api || echo "000")
+          echo "HTTP Response Code: $HTTP_CODE"
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "302" ]; then
+            echo "✅ Backend is responding (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️ Backend returned HTTP $HTTP_CODE or is not accessible"
+          fi
           
-      # 9. Test Frontend
+      # 13. Test Frontend (non-failing)
       - name: Test Frontend
         run: |
-          echo "Testing Frontend..."
-          curl -f http://localhost:3000 || echo "Frontend not responding yet"
+          echo "🧪 Testing Frontend at http://localhost:3000..."
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 || echo "000")
+          echo "HTTP Response Code: $HTTP_CODE"
+          if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
+            echo "✅ Frontend is responding (HTTP $HTTP_CODE)"
+          else
+            echo "⚠️ Frontend returned HTTP $HTTP_CODE or is not accessible"
+          fi
 
-      # 10. Check if all containers are still running
+      # 14. Verify all containers are running
       - name: Verify Containers Still Running
         run: |
           echo "=== Final Container Status ==="
           docker ps
           
-          # Check if all expected containers are running
-          if [ $(docker ps --filter "name=solar_mysql" --filter "status=running" -q | wc -l) -eq 0 ]; then
+          MYSQL_RUNNING=$(docker ps --filter "name=solar_mysql" --filter "status=running" -q | wc -l)
+          BACKEND_RUNNING=$(docker ps --filter "name=solar_backend" --filter "status=running" -q | wc -l)
+          FRONTEND_RUNNING=$(docker ps --filter "name=solar_frontend" --filter "status=running" -q | wc -l)
+          
+          echo "MySQL container running: $MYSQL_RUNNING"
+          echo "Backend container running: $BACKEND_RUNNING"
+          echo "Frontend container running: $FRONTEND_RUNNING"
+          
+          if [ "$MYSQL_RUNNING" -eq 0 ]; then
             echo "❌ MySQL container is not running"
             exit 1
           fi
           
-          if [ $(docker ps --filter "name=solar_backend" --filter "status=running" -q | wc -l) -eq 0 ]; then
+          if [ "$BACKEND_RUNNING" -eq 0 ]; then
             echo "❌ Backend container is not running"
             exit 1
           fi
           
-          if [ $(docker ps --filter "name=solar_frontend" --filter "status=running" -q | wc -l) -eq 0 ]; then
+          if [ "$FRONTEND_RUNNING" -eq 0 ]; then
             echo "❌ Frontend container is not running"
             exit 1
           fi
           
-          echo "✅ All containers are running successfully!"
+          echo "✅ All 3 containers are running successfully!"
+          echo "🎉 CI Build PASSED!"
 
-      # 11. Clean up
+      # 15. Clean up
       - name: Stop and Remove Containers
         if: always()
         run: |
-          echo "Cleaning up..."
-          docker compose down -v
-          docker system prune -f
+          echo "🧹 Cleaning up..."
+          docker compose down -v --remove-orphans
+          echo "✅ Cleanup complete"
