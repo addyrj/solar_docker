@@ -1,0 +1,310 @@
+├── DB
+│   ├── Dockerfile
+│   ├── init.sql
+│   
+├── frontend
+│   ├── src
+│   ├── public
+│   ├── nginx.conf
+│   └── Dockerfile
+├── server
+│   ├── controllers
+│   ├── models
+│   ├── routes
+│   ├── validations
+│   ├── utils
+│   ├── Dockerfile
+│   └── entrypoint.sh     # Backend entrypoint script
+├── .env
+├── docker-compose.yaml
+
+
+# -------------------------------------------------------------- above is folder stracture-----------
+
+# DB/
+# ├── Dockerfile
+
+
+FROM mysql:8.0
+
+# Set environment variables
+ENV MYSQL_ROOT_PASSWORD=your_root_password
+ENV MYSQL_DATABASE=iot_solar
+
+# Copy SQL dump into MySQL initialization directory
+COPY iot_solar.sql /docker-entrypoint-initdb.d/
+
+# Expose MySQL port
+EXPOSE 3306
+
+
+
+
+# frontend/├── nginx.conf  
+
+
+server {
+    listen 80;
+       server_name localhost;
+
+    root /usr/share/nginx/html;
+    index index.html index.htm;
+
+    # React Router support
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy API requests to backend.
+    location /api/ {
+        proxy_pass http://solar_backend:5000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 50M;
+    }
+
+    # Proxy images
+    location /api/images/ {
+        proxy_pass http://solar_backend:5000/api/images/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+
+
+
+
+# frontend/├── Dockerfile 
+
+# Stage 1: Build
+FROM node:18-alpine AS build
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm install
+
+# Copy all source files
+COPY . .
+
+# Build arguments
+ARG REACT_APP_BASE_URL
+ARG REACT_APP_IMAGE_URL
+
+# Create .env.production file
+RUN echo "REACT_APP_BASE_URL=${REACT_APP_BASE_URL}" > .env.production && \
+    echo "REACT_APP_IMAGE_URL=${REACT_APP_IMAGE_URL}" >> .env.production
+
+# Show what we're building with
+RUN echo "=== Build Configuration ===" && \
+    cat .env.production
+
+# Build React app
+RUN npm run build
+
+# Show what was built
+RUN echo "=== Build Output ===" && \
+    ls -la /app/build/
+
+# Stage 2: Production
+FROM nginx:alpine
+
+# Copy built React files from build stage
+COPY --from=build /app/build /usr/share/nginx/html
+
+# Copy nginx configuration
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Show what was copied
+RUN echo "=== Files copied to nginx ===" && \
+    ls -la /usr/share/nginx/html/
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+
+
+# server/Dockerfile
+
+FROM node:18-alpine
+
+# Install both for flexibility (netcat is very small)
+RUN apk update && apk add --no-cache netcat-openbsd mysql-client
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm install
+
+COPY . .
+
+# Make entrypoint executable
+RUN chmod +x entrypoint.sh
+
+EXPOSE 5000
+
+ENTRYPOINT ["./entrypoint.sh"]
+
+
+# server/entrypoint.sh
+
+#!/bin/sh
+set -e
+
+echo "⏳ Waiting for MySQL to be ready..."
+
+# Wait for MySQL to accept connections (TCP check)
+MAX_RETRIES=30
+RETRY_COUNT=0
+
+while ! nc -z mysql 3306; do
+  RETRY_COUNT=$((RETRY_COUNT + 1))
+  if [ $RETRY_COUNT -ge $MAX_RETRIES ]; then
+    echo "❌ MySQL did not become available after $MAX_RETRIES attempts"
+    echo "Attempting to start anyway (backend will retry connection)..."
+    break
+  fi
+  echo "Attempt $RETRY_COUNT/$MAX_RETRIES: Waiting for MySQL on mysql:3306..."
+  sleep 2
+done
+
+if [ $RETRY_COUNT -lt $MAX_RETRIES ]; then
+  echo "✅ MySQL port is open. Giving it extra time to fully initialize..."
+  sleep 10
+fi
+
+echo "🚀 Starting Node.js server...."
+exec node index.js
+
+
+# .env 
+
+# MySQL
+MYSQL_ROOT_PASSWORD=your_root_password
+MYSQL_DATABASE=iot_solar
+
+# Backend
+DB_HOST=mysql
+DB_USER=root
+DB_PASSWORD=your_root_password
+DB_NAME=iot_solar
+DB_DIALECT=mysql
+BACKEND_PORT=5000
+ROOT_ROUTES=/api
+SALT_ROUND=15
+SECRET_KEY_ADMIN_AUTH_TOKEN=SECRETKEYADMINAUTHTOKENNADMINPASSWORDCREATEDBYIOTTECHSOFTWARE
+SECRET_KEY_ADMIN_PASSWORD=SECRETKEYBFOOTLOGINADMINPASSWORDCREATEDBYIOTTECHSOFTWARE
+
+CORS_ORIGIN=http://localhost:3000,http://frontend:80
+
+# MQTT
+MQTT_HOST=mqtt://everonsolar.com:1883
+MQTT_USERNAME=your_mqtt_username
+MQTT_PASSWORD=your_mqtt_password
+MQTT_TOPIC=mppt_demo
+
+# Frontend
+REACT_APP_BASE_URL=/api/
+REACT_APP_IMAGE_URL=/api/images/
+
+
+
+# docker-compose.yaml 
+
+version: "3.9"
+
+services:
+  mysql:
+    build:
+      context: ./DB
+      dockerfile: Dockerfile
+    container_name: solar_mysql
+    restart: always
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - solar_network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+    command: --default-authentication-plugin=mysql_native_password
+
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: solar_backend
+    restart: always
+    ports:
+      - "5001:5000"  # Optional for direct access
+    environment:
+      NODE_ENV: production
+      HOST: ${DB_HOST}
+      USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB: ${DB_NAME}
+      DIALECT: ${DB_DIALECT}
+      PORT: ${BACKEND_PORT}
+      ROOT_ROUTES: ${ROOT_ROUTES}
+      SALT_ROUND: ${SALT_ROUND}
+      SECRET_KEY_ADMIN_AUTH_TOKEN: ${SECRET_KEY_ADMIN_AUTH_TOKEN}
+      SECRET_KEY_ADMIN_PASSWORD: ${SECRET_KEY_ADMIN_PASSWORD}
+      MQTT_HOST: ${MQTT_HOST}
+      MQTT_USERNAME: ${MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MQTT_TOPIC: ${MQTT_TOPIC}
+      CORS_ORIGIN: ${CORS_ORIGIN}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - solar_network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_BASE_URL: ${REACT_APP_BASE_URL}
+        REACT_APP_IMAGE_URL: ${REACT_APP_IMAGE_URL}
+    container_name: solar_frontend
+    restart: always
+    ports:
+      - "80:80"  # Frontend accessible on VPS IP
+    depends_on:
+      - backend
+    networks:
+      - solar_network
+
+networks:
+  solar_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+
+
+
+
+
+
